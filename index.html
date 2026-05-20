@@ -3984,20 +3984,20 @@ const TRIG_TRIPLES = [
    orientation: 0=RA bottom-left, 1=RA bottom-right, 2=RA top-left, 3=RA top-right.
    θ is placed at the non-right-angle vertex on the same vertical side as RA. */
 function drawTrigDiagram(oppLabel, adjLabel, hypLabel, ratio, orientation){
-  /* Canvas 300×195 — axis-aware label positioning prevents all clipping.
+  /* Canvas 320×210 — axis-aware label positioning prevents all clipping.
      A = right-angle vertex, B = theta vertex, C = third vertex.
      Vertical legs push label horizontally; horizontal legs push vertically;
      hypotenuse uses perpendicular outward offset.                         */
-  const W=300, H=195;
+  const W=320, H=210;
   const cfgs = [
     // 0: right angle bottom-left, θ top-left
-    {A:{x:48,y:155}, B:{x:48,y:28},  C:{x:255,y:155}},
+    {A:{x:52,y:168}, B:{x:52,y:28},  C:{x:265,y:168}},
     // 1: right angle bottom-right, θ top-right
-    {A:{x:255,y:155},B:{x:255,y:28}, C:{x:48,y:155}},
+    {A:{x:265,y:168},B:{x:265,y:28}, C:{x:52,y:168}},
     // 2: right angle top-left, θ bottom-left
-    {A:{x:48,y:28},  B:{x:48,y:155}, C:{x:255,y:28}},
+    {A:{x:52,y:28},  B:{x:52,y:168}, C:{x:265,y:28}},
     // 3: right angle top-right, θ bottom-right
-    {A:{x:255,y:28}, B:{x:255,y:155},C:{x:48,y:28}}
+    {A:{x:265,y:28}, B:{x:265,y:168},C:{x:52,y:28}}
   ];
   const {A, B, C} = cfgs[orientation||0];
   const cent = {x:(A.x+B.x+C.x)/3, y:(A.y+B.y+C.y)/3};
@@ -4005,16 +4005,35 @@ function drawTrigDiagram(oppLabel, adjLabel, hypLabel, ratio, orientation){
   function labelPos(p, q, offset){
     const mx=(p.x+q.x)/2, my=(p.y+q.y)/2;
     const dx=q.x-p.x, dy=q.y-p.y;
-    if(Math.abs(dx) < 2)
-      return {x: mx + (mx > cent.x ? offset : -offset), y: my};
-    if(Math.abs(dy) < 2)
-      return {x: mx, y: my + (H-my > my ? offset : -offset)};
+    // For vertical sides: push horizontally away from triangle centre
+    if(Math.abs(dx) < 2){
+      const pushRight = mx > cent.x;
+      return {x: mx + (pushRight ? offset : -offset), y: my};
+    }
+    // For horizontal sides: push vertically away from triangle centre
+    // but clamp so label stays within SVG canvas
+    if(Math.abs(dy) < 2){
+      const pushDown = cent.y < my;
+      const rawY = my + (pushDown ? offset : -offset);
+      const clampedY = Math.max(14, Math.min(H - 14, rawY));
+      // If clamping changed the direction, flip to the other side instead
+      const finalY = (pushDown && clampedY < my) ? my - offset :
+                     (!pushDown && clampedY > my) ? my + offset : clampedY;
+      return {x: Math.max(18, Math.min(W-18, mx)), y: Math.max(14, Math.min(H-14, finalY))};
+    }
+    // For diagonal (hypotenuse): use normal vector pointing AWAY from centroid
     const len=Math.sqrt(dx*dx+dy*dy);
     const n1={x:-dy/len,y:dx/len}, n2={x:dy/len,y:-dx/len};
-    const d1=(mx+n1.x-cent.x)**2+(my+n1.y-cent.y)**2;
-    const d2=(mx+n2.x-cent.x)**2+(my+n2.y-cent.y)**2;
+    // Pick the normal that points away from the centroid
+    const test1x=mx+n1.x*10, test1y=my+n1.y*10;
+    const test2x=mx+n2.x*10, test2y=my+n2.y*10;
+    const d1=(test1x-cent.x)**2+(test1y-cent.y)**2;
+    const d2=(test2x-cent.x)**2+(test2y-cent.y)**2;
     const n=d1>d2?n1:n2;
-    return {x:mx+n.x*offset, y:my+n.y*offset};
+    // Clamp so label stays within canvas
+    const lx=Math.max(18, Math.min(W-18, mx+n.x*offset));
+    const ly=Math.max(14, Math.min(H-10, my+n.y*offset));
+    return {x:lx, y:ly};
   }
 
   // Right-angle square at A
@@ -4041,17 +4060,26 @@ function drawTrigDiagram(oppLabel, adjLabel, hypLabel, ratio, orientation){
   }
 
   // BC = hypotenuse, AB = adjacent to θ, AC = opposite to θ
-  const lHyp = labelPos(B, C, 26);
-  const lAdj = labelPos(A, B, 28);
-  const lOpp = labelPos(A, C, 26);
+  const lHyp = labelPos(B, C, 34);
+  const lAdj = labelPos(A, B, 36);
+  const lOpp = labelPos(A, C, 34);
+
+  function renderSideLabel(pos, label, isHyp){
+    const isQ = label === '?';
+    const fill = isQ ? '#b21f2d' : (isHyp ? '#b21f2d' : '#111');
+    const sz = isQ ? 16 : 13;
+    const fw = isQ ? 'bold' : 'normal';
+    const bg = isQ ? `<circle cx="${pos.x.toFixed(1)}" cy="${pos.y.toFixed(1)}" r="12" fill="#fff3f3" stroke="#b21f2d" stroke-width="1.2"/>` : '';
+    return bg + `<text x="${pos.x.toFixed(1)}" y="${pos.y.toFixed(1)}" font-size="${sz}" font-weight="${fw}" text-anchor="middle" dominant-baseline="middle" fill="${fill}">${label}</text>`;
+  }
 
   const body =
     `<polygon points="${A.x},${A.y} ${B.x},${B.y} ${C.x},${C.y}" fill="#e8f0ff" stroke="#2c4fa3" stroke-width="2"/>` +
     raSq(A, B, C) +
     thetaArc(B, A, C) +
-    `<text x="${lHyp.x.toFixed(1)}" y="${lHyp.y.toFixed(1)}" font-size="13" text-anchor="middle" dominant-baseline="middle" fill="#b21f2d">${hypLabel}</text>` +
-    `<text x="${lAdj.x.toFixed(1)}" y="${lAdj.y.toFixed(1)}" font-size="13" text-anchor="middle" dominant-baseline="middle" fill="#111">${adjLabel}</text>` +
-    `<text x="${lOpp.x.toFixed(1)}" y="${lOpp.y.toFixed(1)}" font-size="13" text-anchor="middle" dominant-baseline="middle" fill="#111">${oppLabel}</text>`;
+    renderSideLabel(lHyp, hypLabel, true) +
+    renderSideLabel(lAdj, adjLabel, false) +
+    renderSideLabel(lOpp, oppLabel, false);
 
   return gSvg(W, H, body);
 }
@@ -4142,10 +4170,161 @@ function makeTrigTOAQuestion(){
     solution: `tan θ = opposite ÷ adjacent = ${new Fraction(opposite,adjacent).toFractionString()}`
   };
 }
+/* =========================
+   TRIGONOMETRY — FIND SIDE & FIND ANGLE (NEW)
+   ========================= */
 
+function makeTrigFindSideQuestion(){
+  const angles = [30, 35, 40, 45, 50, 55, 60];
+  const angle  = choice(angles);
+  const ratio  = choice(['SOH','CAH','TOA']);
+  const knownLen = randInt(4, 12);
+  const orientation = choice([0,1,2,3]);
+  const sinA = Math.sin(angle * Math.PI / 180);
+  const cosA = Math.cos(angle * Math.PI / 180);
+  const tanA = Math.tan(angle * Math.PI / 180);
+  const dp1 = v => Number(v).toFixed(1);
 
+  if(ratio === 'SOH'){
+    const hyp = knownLen;
+    const opp = dp1(hyp * sinA);
+    const mcq = buildMCQOptions(`${opp} cm`, [
+      `${dp1(hyp * cosA)} cm`,
+      `${dp1(hyp / sinA)} cm`,
+      `${dp1(hyp * tanA)} cm`
+    ]);
+    if(!mcq) return makeTrigFindSideQuestion();
+    return {
+      id: makeID("GEO"),
+      topic: "Geometry & Measure",
+      skill: "Trigonometry — Find a Side",
+      difficulty: "Intermediate / Higher",
+      question: `Find the length of the side marked ?.\nAngle \u03b8 = ${angle}\u00b0, hypotenuse = ${hyp} cm.`,
+      diagram: drawTrigDiagram('?', '', `${hyp} cm`, 'sin', orientation),
+      options: mcq.options,
+      correctIndex: mcq.correctIndex,
+      solution: `Using SOH:\nsin \u03b8 = opposite \u00f7 hypotenuse\nopposite = hypotenuse \u00d7 sin \u03b8\n= ${hyp} \u00d7 sin(${angle}\u00b0)\n= ${hyp} \u00d7 ${dp1(sinA)}\n= ${opp} cm`
+    };
+  }
 
+  if(ratio === 'CAH'){
+    const hyp = knownLen;
+    const adj = dp1(hyp * cosA);
+    const mcq = buildMCQOptions(`${adj} cm`, [
+      `${dp1(hyp * sinA)} cm`,
+      `${dp1(hyp / cosA)} cm`,
+      `${dp1(hyp * tanA)} cm`
+    ]);
+    if(!mcq) return makeTrigFindSideQuestion();
+    return {
+      id: makeID("GEO"),
+      topic: "Geometry & Measure",
+      skill: "Trigonometry — Find a Side",
+      difficulty: "Intermediate / Higher",
+      question: `Find the length of the side marked ?.\nAngle \u03b8 = ${angle}\u00b0, hypotenuse = ${hyp} cm.`,
+      diagram: drawTrigDiagram('', '?', `${hyp} cm`, 'cos', orientation),
+      options: mcq.options,
+      correctIndex: mcq.correctIndex,
+      solution: `Using CAH:\ncos \u03b8 = adjacent \u00f7 hypotenuse\nadjacent = hypotenuse \u00d7 cos \u03b8\n= ${hyp} \u00d7 cos(${angle}\u00b0)\n= ${hyp} \u00d7 ${dp1(cosA)}\n= ${adj} cm`
+    };
+  }
 
+  // TOA
+  const adj2 = knownLen;
+  const opp2 = dp1(adj2 * tanA);
+  const mcq = buildMCQOptions(`${opp2} cm`, [
+    `${dp1(adj2 * sinA)} cm`,
+    `${dp1(adj2 * cosA)} cm`,
+    `${dp1(adj2 / tanA)} cm`
+  ]);
+  if(!mcq) return makeTrigFindSideQuestion();
+  return {
+    id: makeID("GEO"),
+    topic: "Geometry & Measure",
+    skill: "Trigonometry — Find a Side",
+    difficulty: "Intermediate / Higher",
+    question: `Find the length of the side marked ?.\nAngle \u03b8 = ${angle}\u00b0, adjacent = ${adj2} cm.`,
+    diagram: drawTrigDiagram('?', `${adj2} cm`, '', 'tan', orientation),
+    options: mcq.options,
+    correctIndex: mcq.correctIndex,
+    solution: `Using TOA:\ntan \u03b8 = opposite \u00f7 adjacent\nopposite = adjacent \u00d7 tan \u03b8\n= ${adj2} \u00d7 tan(${angle}\u00b0)\n= ${adj2} \u00d7 ${dp1(tanA)}\n= ${opp2} cm`
+  };
+}
+
+function makeTrigFindAngleQuestion(){
+  const ratio = choice(['SOH','CAH','TOA']);
+  const orientation = choice([0,1,2,3]);
+  const dp1 = v => Number(v).toFixed(1);
+  const triples = [[3,4,5],[5,12,13],[8,15,17],[7,24,25],[6,8,10],[9,12,15]];
+  const t = choice(triples);
+
+  if(ratio === 'SOH'){
+    const opp = t[0], hyp = t[2];
+    const angle = dp1(Math.asin(opp/hyp) * 180 / Math.PI);
+    const mcq = buildMCQOptions(`${angle}°`, [
+      `${dp1(Number(angle)+8)}°`,
+      `${dp1(90-Number(angle))}°`,
+      `${dp1(Number(angle)-8)}°`
+    ]);
+    if(!mcq) return makeTrigFindAngleQuestion();
+    return {
+      id: makeID("GEO"),
+      topic: "Geometry & Measure",
+      skill: "Trigonometry — Find an Angle",
+      difficulty: "Intermediate / Higher",
+      question: `Find the angle \u03b8 in the right-angled triangle shown.\nOpposite = ${opp} cm, hypotenuse = ${hyp} cm.\nGive your answer to 1 decimal place.`,
+      diagram: drawTrigDiagram(`${opp} cm`, '', `${hyp} cm`, 'sin', orientation),
+      options: mcq.options,
+      correctIndex: mcq.correctIndex,
+      solution: `Using SOH:\nsin \u03b8 = opposite \u00f7 hypotenuse\nsin \u03b8 = ${opp} \u00f7 ${hyp} = ${dp1(opp/hyp)}\n\u03b8 = sin⁻¹(${dp1(opp/hyp)}) = ${angle}°`
+    };
+  }
+
+  if(ratio === 'CAH'){
+    const adj = t[1], hyp = t[2];
+    const angle = dp1(Math.acos(adj/hyp) * 180 / Math.PI);
+    const mcq = buildMCQOptions(`${angle}°`, [
+      `${dp1(Number(angle)+8)}°`,
+      `${dp1(90-Number(angle))}°`,
+      `${dp1(Number(angle)-8)}°`
+    ]);
+    if(!mcq) return makeTrigFindAngleQuestion();
+    return {
+      id: makeID("GEO"),
+      topic: "Geometry & Measure",
+      skill: "Trigonometry — Find an Angle",
+      difficulty: "Intermediate / Higher",
+      question: `Find the angle \u03b8 in the right-angled triangle shown.\nAdjacent = ${adj} cm, hypotenuse = ${hyp} cm.\nGive your answer to 1 decimal place.`,
+      diagram: drawTrigDiagram('', `${adj} cm`, `${hyp} cm`, 'cos', orientation),
+      options: mcq.options,
+      correctIndex: mcq.correctIndex,
+      solution: `Using CAH:\ncos \u03b8 = adjacent \u00f7 hypotenuse\ncos \u03b8 = ${adj} \u00f7 ${hyp} = ${dp1(adj/hyp)}\n\u03b8 = cos⁻¹(${dp1(adj/hyp)}) = ${angle}°`
+    };
+  }
+
+  // TOA — use simple integer pairs
+  const pairs = [[3,4],[4,3],[5,8],[8,5],[6,7],[7,6],[9,10],[10,9]];
+  const p = choice(pairs);
+  const opp2 = p[0], adj2 = p[1];
+  const angle2 = dp1(Math.atan(opp2/adj2) * 180 / Math.PI);
+  const mcq = buildMCQOptions(`${angle2}°`, [
+    `${dp1(Number(angle2)+8)}°`,
+    `${dp1(90-Number(angle2))}°`,
+    `${dp1(Number(angle2)-8)}°`
+  ]);
+  if(!mcq) return makeTrigFindAngleQuestion();
+  return {
+    id: makeID("GEO"),
+    topic: "Geometry & Measure",
+    skill: "Trigonometry — Find an Angle",
+    difficulty: "Intermediate / Higher",
+    question: `Find the angle \u03b8 in the right-angled triangle shown.\nOpposite = ${opp2} cm, adjacent = ${adj2} cm.\nGive your answer to 1 decimal place.`,
+    diagram: drawTrigDiagram(`${opp2} cm`, `${adj2} cm`, '', 'tan', orientation),
+    options: mcq.options,
+    correctIndex: mcq.correctIndex,
+    solution: `Using TOA:\ntan \u03b8 = opposite \u00f7 adjacent\ntan \u03b8 = ${opp2} \u00f7 ${adj2} = ${dp1(opp2/adj2)}\n\u03b8 = tan⁻¹(${dp1(opp2/adj2)}) = ${angle2}°`
+  };
+}
 
 /* =========================
    STATISTICS & PROBABILITY GENERATORS (UPGRADED — LOCKED)
@@ -7628,6 +7807,8 @@ const FACTORY_REGISTRY = [
   { topic:"Geometry & Measure", name:"Trigonometry \u2014 SOH (sin)", fn:makeTrigSOHQuestion, prefix:"GEO", inMap:true },
   { topic:"Geometry & Measure", name:"Trigonometry \u2014 CAH (cos)", fn:makeTrigCAHQuestion, prefix:"GEO", inMap:true },
   { topic:"Geometry & Measure", name:"Trigonometry \u2014 TOA (tan)", fn:makeTrigTOAQuestion, prefix:"GEO", inMap:true },
+  { topic:"Geometry & Measure", name:"Trigonometry \u2014 Find a Side", fn:makeTrigFindSideQuestion, prefix:"GEO", inMap:true },
+    { topic:"Geometry & Measure", name:"Trigonometry \u2014 Find an Angle", fn:makeTrigFindAngleQuestion, prefix:"GEO", inMap:true },
   { topic:"Statistics & Probability", name:"Mean \u2014 Integer Data", fn:makeMeanQuestionInteger, prefix:"STAT", inMap:true },
   { topic:"Statistics & Probability", name:"Mean \u2014 Missing Value", fn:makeMissingMeanQuestion, prefix:"STAT", inMap:true },
   { topic:"Statistics & Probability", name:"Median", fn:makeMedianQuestion, prefix:"STAT", inMap:true },
